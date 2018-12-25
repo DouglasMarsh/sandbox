@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Linq;
 using System.IO;
 using System.Text;
@@ -12,11 +12,9 @@ using System.Collections.Generic;
 class bender_1
 {
     static Point _position;
-    static bool _reverse = false;
-    static bool _breaker = false;
+    static State _state = new State("SOUTH", false, false);
     static char[,] _map = null;
     static HashSet<State>[,] _history = null;
-    static string _direction = "SOUTH";
     static List<Point> _teleporters = null;
     static List<string> _output = new List<string>();
     static void Main(string[] args)
@@ -49,22 +47,19 @@ class bender_1
         Console.Error.WriteLine("End: " + end);
 
         _position = start;
-        while ( _direction != "LOOP" && _map[_position.C, _position.L] != '$' )
-        {
+        while ( _state.Direction != "LOOP" && _map[_position.C, _position.L] != '$' )
+        {            
             Move();
-            _output.Add(_direction);
-            // if state has been duplicated for this position, LOOP
-            var s = new State(_direction, _reverse, _breaker);
-            if ( !_history[_position.C, _position.L].Add(s) )
+            if(!_history[_position.C, _position.L].Add(_state))
             {
-                Console.Error.WriteLine("Loop detected: {0}. State: {1}", _position, s);
-                Console.Error.Write(string.Join("\n",_output));
-                _direction = "LOOP";
+                _state.Direction = "LOOP";
                 break;
             }
+
+            _output.Add(_state.Direction);
         }
 
-        if (_direction == "LOOP")
+        if (_state.Direction == "LOOP")
             Console.WriteLine("LOOP");
         else
             Console.Write(string.Join("\n",_output));
@@ -75,22 +70,22 @@ class bender_1
         switch(_map[p.C, p.L])
         {
             case 'N':
-                _direction = "NORTH";
+                _state.Direction = "NORTH";
                 break;
             case 'S':
-                _direction = "SOUTH";
+                _state.Direction = "SOUTH";
                 break;
             case 'E':
-                _direction = "EAST";
+                _state.Direction = "EAST";
                 break;
             case 'W':
-                _direction = "WEST";
+                _state.Direction = "WEST";
                 break;
             case 'I':
-                _reverse = !_reverse;
+                _state.Reverse = !_state.Reverse;
                 break;
             case 'B':
-                _breaker = !_breaker;
+                _state.Breaker = !_state.Breaker;
                 break;
             case 'T':
                 var t = _teleporters[0];
@@ -103,68 +98,29 @@ class bender_1
                     p = _teleporters[0];
                 }
                 break;
-            case 'X':
-                if (_breaker)
-                {
-                    _map[p.C, p.L] = ' ';
-                    ClearHistory();
-                }
-                else
-                {
-                    HandleBlocked();
-                }
-                break;
-            case '#':
-                HandleBlocked();
-                break;
         }
 
-        if (_direction == "SOUTH") p += Point.South;
-        else if (_direction == "EAST") p += Point.East;
-        else if (_direction == "NORTH") p += Point.North;
-        else if (_direction == "WEST") p += Point.West;
+        if (_state.Direction == "SOUTH") p += Point.South;
+        else if (_state.Direction == "EAST") p += Point.East;
+        else if (_state.Direction == "NORTH") p += Point.North;
+        else if (_state.Direction == "WEST") p += Point.West;
 
         // handle new position
         var c = _map[p.C, p.L];
         switch (c)
         {
-            case 'I':
-                _reverse = !_reverse;
-
-                Console.Error.WriteLine("{0}", _reverse ? "Reversed" : "Back to Normal");
-                break;
-            case 'B':
-                _breaker = !_breaker;
-                Console.Error.WriteLine("{0}", _breaker ? "BEER!!! Bender SMASH!!!" : "Sober");
-                break;
-            case 'T':
-                var t = _teleporters[0];
-                if (t.L == p.L && t.C == p.C)
-                {
-                    p = _teleporters[1];
-                }
-                else
-                {
-                    p = _teleporters[0];
-                }
-
-                Console.Error.WriteLine("Fast Travel to {0}", p);
-                break;
             case 'X':
-                if (_breaker)
+                if (_state.Breaker)
                 {
-                    Console.Error.WriteLine("BEER!!! Wall Smashed at {0}", p);
                     _map[p.C, p.L] = ' ';
                     ClearHistory();
                 }
                 else
                 {
-                    Console.Error.WriteLine("Blocked by X at {0}", p);
                     p = HandleBlocked();
                 }
                 break;
             case '#':
-                Console.Error.WriteLine("Blocked by # at {0}", p);
                 p = HandleBlocked();
                 break;
         }
@@ -172,17 +128,16 @@ class bender_1
 
         _position = p;
     }
-    static void HandleBlocked()
+    static Point HandleBlocked()
     {
         var directions = new string[] { "SOUTH", "EAST", "NORTH", "WEST" };
-        if( _reverse ) directions = new string[] {  "WEST", "NORTH", "EAST","SOUTH" };
+        if( _state.Reverse ) directions = new string[] {  "WEST", "NORTH", "EAST","SOUTH" };
 
-        Point p = _position;
-        var c = _map[p.C, p.L];
         
         foreach (var d in directions)
         {
-            
+            Point p = _position;
+        
             if (d == "SOUTH") p += Point.South;
             else if (d == "EAST") p += Point.East;
             else if (d == "NORTH") p += Point.North;
@@ -193,12 +148,14 @@ class bender_1
                 case 'X':                
                 case '#':
                     continue;
-                
                 default:
-                    _direction = d;
+                    _state.Direction = d;
+                    return p;
                     break;
             }
         }
+        
+        throw new ApplicationException("Shouldn't Reach Here");
 
     }
     static void ClearHistory()
