@@ -151,7 +151,6 @@ class bender_1
                 default:
                     _state.Direction = d;
                     return p;
-                    break;
             }
         }
         
