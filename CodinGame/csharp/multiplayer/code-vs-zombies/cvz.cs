@@ -122,7 +122,7 @@ class code_vs_zombies
         public Queue<Point> Moves {get; private set;}
         
         
-        public void SimulateTurn(int zombieId=-1)
+        public void SimulateTurn()
         {
             Moves.Enqueue(Ash.Pos);
             
@@ -181,12 +181,8 @@ class code_vs_zombies
         }
         public void Simulate(Stopwatch sw, int processingTime)
         {
+                
             var targetZ = Zombies[rand.Next(0, Zombies.Length-1)];
-            var itp = new Point( targetZ.NextPos.X + rand.Next(-100,100), targetZ.NextPos.Y + rand.Next(-100,100));
-
-            Ash.Pos = Ash.Pos.MoveToward(itp, rand.Next(0, 1000));
-            SimulateTurn(targetZ.Id);
-
             while( Humans.Any() && Zombies.Any() && sw.ElapsedMilliseconds < processingTime)
             {
                 if( !Zombies.Any(z => z.Id == targetZ.Id))
@@ -195,8 +191,11 @@ class code_vs_zombies
                 }
                 int distance = Ash.Pos.DistanceTo(targetZ.NextPos);
                 distance = distance > 3000 ? 1000 : rand.Next(distance-2000, 1000);
-                Ash.Pos = Ash.Pos.MoveToward(targetZ.NextPos, distance);
-                SimulateTurn(targetZ.Id);
+
+                var angle = Util.ToDegrees( Util.AngleBetween(Ash.Pos, targetZ.NextPos));
+                angle += rand.Next(-10,10);
+                Ash.Pos = Ash.Pos.Move(Util.ToRadians(angle), distance);
+                SimulateTurn();
             }
         }
     }
@@ -293,10 +292,10 @@ class code_vs_zombies
         
         public Point Move(double angle, int distance)
         {
-            var x= distance * Math.Cos(angle);
-            var y = distance * Math.Sin(angle);
-
-            return new Point((int)x,(int)y);
+            return new Point(
+                X + (int)( distance * Math.Cos( angle ) ),
+                Y + (int)( distance * Math.Sin( angle ) )
+            );
         }
         
     }
@@ -370,7 +369,10 @@ class code_vs_zombies
             angle = angle * (180/Math.PI);
             return (angle < 0) ? (360d + angle) : angle;
         }
-        
+        public static double ToRadians(double angle)
+        {
+            return angle * Math.PI/180;
+        }
     }
     
 }
