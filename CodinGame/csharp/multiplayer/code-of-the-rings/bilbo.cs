@@ -4,80 +4,432 @@ using System.IO;
 using System.Text;
 using System.Collections;
 using System.Collections.Generic;
+using System.Diagnostics;
+using System.Text.RegularExpressions;
+
 
 /**
  * Auto-generated code below aims at helping you parse
  * the standard input according to the problem statement.
  **/
-class bilbo
+public class bilbo
 {
-
-    static char[] zones = string.Empty.PadRight(30,' ').ToArray();        
-    static void Main(string[] args)
+    static TextReader _input;
+    static  TextWriter _output;
+    static TextWriter Error;
+    
+    static Regex hasDuplicates = new Regex("(.+?)\\1+", RegexOptions.Compiled);
+    static char[] zones = string.Empty.PadRight(30, ' ').ToArray();
+    public static void Main(string[] args) => Process(Console.In, Console.Out, Console.Error);
+    public static void Process(TextReader input, TextWriter output, TextWriter error)
     {
-
+        string magicPhrase = input.ReadLine();
         string instruction = string.Empty;
-        string magicPhrase = Console.ReadLine();
 
-        int zone = 0;
-        foreach( var rune in magicPhrase)
+        int z = 0;
+        Tuple<int, string> solution = null;
+        int i = 0;
+        while(i < magicPhrase.Length)
         {
-            Tuple<int, string> solution = null;
-            var solutions = new List<Tuple<int, string>>();
-            if( zones.Contains(rune))
+            error.WriteLine("Spell idx {0}: Memory: {1}", i, string.Concat(zones.Select(c => c == ' ' ? '-' : c)));
+            string sequence = IdentifySequence(magicPhrase.Skip(i).ToArray());
+            if( !string.IsNullOrEmpty(sequence))
             {
-                solution = MoveToRune(rune, zone);
-                solutions.Add(solution);
-            } 
+                error.WriteLine("Processing sequence: " + sequence);
+                solution = ProcessSequence(sequence, z);
+                instruction += solution.Item2;
+                z = solution.Item1;
+                i += sequence.Length;
 
-            solution = new Tuple<int, string>(zone, SetRune(rune, zone));
-            solutions.Add(solution);
+                error.WriteLine("After Sequence: Spell idx {0}: Memory: {1}", i, string.Concat(zones.Select(c => c == ' ' ? '-' : c)));
+                continue;
+            }
 
-            var m2s = MoveToSpace(zone, false);
-            solution = new Tuple<int, string>(m2s.Item1, m2s.Item2 + SetRune(rune, m2s.Item1));
-            solutions.Add(solution);
-            
-            m2s = MoveToSpace(zone, true);
-            solution = new Tuple<int, string>(m2s.Item1, m2s.Item2 + SetRune(rune, m2s.Item1));
-            solutions.Add(solution);
+            var duplicate = IdentifyDuplicates( string.Concat(magicPhrase.Skip(i)) );
+            if( duplicate != null )
+            {
+                error.WriteLine("Processing duplicate {0} * {1}", duplicate.Item1, duplicate.Item2);
+                
+                solution = ProcessDuplicatePhrase(duplicate.Item1, duplicate.Item2, z);
+                instruction += solution.Item2;
+                z = solution.Item1;
+                i += duplicate.Item1.Length * duplicate.Item2;
+                
+                error.WriteLine("After Duplicate: Spell idx {0}: Memory: {1}", i, string.Concat(zones.Select(c => c == ' ' ? '-' : c)));
+                continue;
+            }
 
-            var cmd = solutions.OrderBy(s => s.Item2.Length).First();
-
-            var oZ = zone;
-            var oR = zones[oZ];
-
-            zone = cmd.Item1;
-            zones[zone] = rune;
-            instruction += cmd.Item2 + "."; 
-               
+            error.WriteLine("Processing rune: " + magicPhrase[i]);
+                
+            solution = ProcessRune(magicPhrase[i], z);
+            instruction += solution.Item2;
+            z = solution.Item1;
+            i++;
+                
+            error.WriteLine("After ProcessRune: Spell idx {0}: Memory: {1}", i, string.Concat(zones.Select(c => c == ' ' ? '-' : c)));
+                
+        }
+        while(instruction.Contains("<>") || instruction.Contains("><") || instruction.Contains("+-") || instruction.Contains("-+"))
+        {
+            instruction = instruction.Replace("><","");
+            instruction = instruction.Replace("<>","");
+            instruction = instruction.Replace("+-","");
+            instruction = instruction.Replace("-+","");
         }
 
-        Console.WriteLine(instruction);
+        output.WriteLine(instruction);
+    }
+    static Tuple<int, string> ProcessRune( char rune, int z)
+    {
+        var solution = ProcessPhrase( new[] { rune }, z);
+        Array.Copy(solution.Item1, zones, 30);
+
+        return new Tuple<int, string>(solution.Item2, solution.Item3);
+    }
+    static Tuple<char[], int,string> ProcessPhrase(char[] phrase, int z)
+    {
+        var memory = new char[30];
+        Array.Copy(zones, memory,30);
+        
+        var solutions = new List<Tuple<int, string>>();
+        string cmd = string.Empty;
+        for (int i = 0; i < phrase.Length; i++)
+        {
+            char rune = phrase[i];
+
+            solutions.Clear();
+            
+            if (zones.Contains(rune))
+            {
+                solutions.Add(MoveToRune(rune, z));
+            }
+
+            solutions.Add(new Tuple<int, string>(z, SetRune(rune, z)));
+
+            var m2s = MoveToSpace(z, false);
+            solutions.Add(new Tuple<int, string>(m2s.Item1, m2s.Item2 + SetRune(rune, m2s.Item1)));
+
+            m2s = MoveToSpace(z, true);
+            solutions.Add(new Tuple<int, string>(m2s.Item1, m2s.Item2 + SetRune(rune, m2s.Item1)));
+
+            var solution = solutions.OrderBy(s => s.Item2.Length).First();
+
+            z = solution.Item1;
+            zones[z] = rune;
+            cmd += solution.Item2 + ".";
+        }
+
+        var retval = new Tuple<char[], int, string>(new char[30], z, cmd);
+        Array.Copy(zones, retval.Item1,30);    
+        Array.Copy(memory, zones,30);
+
+        return retval;
+    }
+    
+    static string IdentifySequence(char[] phrase)
+    {
+        int i = 0;
+        int direction = 0;
+        string sequence = "";
+        while( i+1 < phrase.Length)
+        {
+            char c = phrase[i];
+            if( direction == 0)
+            {
+                if( phrase[i+1] == c+1) direction = 1;
+                else if( phrase[i+1] == c-1) direction = -1;
+                else break;
+
+                sequence += phrase[i];                
+            }
+            
+            if( phrase[i+1] == c+direction)
+            {
+                sequence += phrase[++i];              
+                continue;              
+            }
+            break;
+        }
+
+        return sequence;
+    }
+    static Tuple<int, string> ProcessSequence(string sequence, int z)
+    {
+        
+        string cmd = string.Empty;
+        int nz = z;
+        if( string.IsNullOrEmpty(sequence) ) return null;
+
+        int direction = sequence[1] - sequence[0];
+        
+        if( sequence.Length == 26) // full alphabet
+        {            
+            if(zones[z] == (direction < 0 ? 'Z' : 'A'))
+            {
+                return new Tuple<int, string>(z, direction < 0 ? "[.-]" : "[.+]");
+            }
+            else
+            {
+                Tuple<int, string> m = null;
+                if (zones.Contains(' '))
+                {
+                    m = MoveToSpace(z);
+                    var mb = MoveToSpace(z, true);
+                    if (mb.Item2.Length < m.Item2.Length) m = mb;
+                }
+                cmd = ClearRune(z);
+                if (m != null)
+                {
+                    if (m.Item2.Length < cmd.Length)
+                    {
+                        z = m.Item1;
+                        cmd = m.Item2;
+                    }
+                }
+                return new Tuple<int, string>(z, cmd + (direction < 0 ? "-[.-]" : "+[.+]"));
+            }
+        }
+        else 
+        {
+            Tuple<char[],int,string> solution = null;
+            var memory = new char[30];
+            Array.Copy(zones, memory,30);
+        
+            var solutions = new List<Tuple<char[],int,string>>();
+            char rune = sequence[0];
+
+            if (zones.Contains(rune))
+            {
+                var mtr = MoveToRune(rune, z);
+                cmd = mtr.Item2;
+                nz = mtr.Item1+1;
+
+                // write counter
+                cmd += ">";
+                cmd += SetRune((char)(64 + sequence.Length), nz );
+
+                // write the loop
+                cmd += direction < 0 ? "[<.->-]" : "[<.+>-]";
+
+                solution = new Tuple<char[],int,string>(new char[30], nz, cmd);
+                Array.Copy(zones, solution.Item1,30);  
+                
+                solutions.Add(solution);  
+                Array.Copy(memory, zones, 30);
+            }
+
+            #region Sequence with Loop
+            cmd = SetRune(rune, z);
+            nz = z+1;
+
+            // write counter
+            cmd += ">";
+            cmd += SetRune((char)(64 + sequence.Length), nz );
+
+            // write the loop
+            cmd += direction < 0 ? "[<.->-]" : "[<.+>-]";
+
+            solution = new Tuple<char[],int,string>(new char[30], nz, cmd);
+            Array.Copy(zones, solution.Item1,30);  
+            
+            solutions.Add(solution);  
+            Array.Copy(memory, zones, 30);
+            #endregion
+
+            // Sequence without loop
+            solution = ProcessPhrase(sequence.ToArray(), z);
+            solutions.Add(solution);  
+            Array.Copy(memory, zones, 30);
+
+            solution = solutions.OrderBy(s => s.Item3.Length).First();
+            
+            Array.Copy(solution.Item1, zones, 30);
+            return new Tuple<int, string>(solution.Item2, solution.Item3);
+        }
+        
+    }
+    
+    static Tuple<string,int> IdentifyDuplicates(string phrase)
+    {
+        var match = hasDuplicates.Match(phrase);
+        if( match.Success && match.Index == 0 )
+        {
+            var dup = match.Groups[1].Value;
+            int count = match.Value.Length / dup.Length;
+            
+            return new Tuple<string,int>(dup, Math.Min(26,count));
+        }
+        return null;
+    }
+    static Tuple<int, string> ProcessDuplicatePhrase(string phrase, int repeat, int z)
+    {
+        var memory = new char[30];
+        Array.Copy(zones, memory, 30);
+
+        string cmd = string.Empty;
+        int nz = z;
+
+        string sZones = new string(zones);
+        Tuple<char[], int,string> solution = null;
+        var solutions = new List<Tuple<char[], int,string>>();
+
+        // does zones contain the phrase        
+        if(sZones.Contains(phrase))
+        {
+            // find location of phrase that is nearest to current location
+            int phraseIdx = sZones.IndexOf(phrase);
+            int distTo = 30;
+            do
+            {
+                if( Math.Abs(distTo) > Math.Abs(phraseIdx - z)) 
+                    distTo = phraseIdx - z;
+
+                if( phraseIdx + phrase.Length >= 30) break;
+
+                phraseIdx = sZones.IndexOf(phrase, phraseIdx + phrase.Length);
+            } while( phraseIdx > 0);
+
+            // move to location
+            nz = z + distTo + phrase.Length;
+            if( nz < 0 ) nz = 30 - nz;
+            if( nz > 29 ) nz = nz - 30;
+
+            cmd = MoveToAddress(z, nz);
+           
+            // write counter
+            //Console.Error.WriteLine("Contains: Writing counter value {0} at Memory Pos: {1}", (char)(64 + repeat), nz);
+            cmd += SetRune((char)(64 + repeat), nz );
+
+            // write the loop
+            cmd += string.Format("[{0}{1}-]", 
+                        "".PadRight(phrase.Length,'<'), 
+                        string.Join("",Enumerable.Range(0, phrase.Length).Select(i => ".>")));
+
+            
+            solution = new Tuple<char[],int,string>(new char[30], nz, cmd);
+            Array.Copy(zones, solution.Item1,30);  
+            
+            solutions.Add(solution);  
+            //Console.Error.WriteLine("Contains: Solution Memory: " + string.Concat(solution.Item1.Select(c => c == ' ' ? '-' : c)));
+            Array.Copy(memory, zones, 30);
+        }
+
+        // does zones contain the reverse phrase  
+        string rPhrase = string.Concat(phrase.Reverse());     
+        if(sZones.Contains(rPhrase))
+        {
+            cmd = string.Empty;
+            // find location of phrase that is nearest to current location
+            int phraseIdx = sZones.IndexOf(rPhrase);
+            int distTo = 30;
+            do
+            {
+                if( Math.Abs(distTo) > Math.Abs(phraseIdx - z)) 
+                    distTo = phraseIdx - z;
+
+                if( phraseIdx + rPhrase.Length >= 30) break;
+
+                phraseIdx = sZones.IndexOf(rPhrase, phraseIdx + phrase.Length);
+            } while( phraseIdx > 0);
+
+            // move to location
+            nz = z + distTo;
+            nz--;
+            //Console.Error.WriteLine("ContainsR: nz" + nz);
+
+            if( nz < 0 ) nz = 30 + nz;
+            if( nz > 29 ) nz = nz - 30;
+            cmd = MoveToAddress(z, nz);
+            //Console.Error.WriteLine("ContainsR: Moved {0} units from {1} to {2}", distTo, z, nz);
+            
+
+            // write counter
+            //Console.Error.WriteLine("ContainsR: Writing counter value {0} at Memory Pos: {1}", (char)(64 + repeat), nz);
+            cmd += SetRune((char)(64 + repeat), nz );
+
+            // write the loop
+            cmd += string.Format("[{0}{1}-]", 
+                        "".PadRight(phrase.Length,'>'), 
+                        string.Join("",Enumerable.Range(0, rPhrase.Length).Select(i => ".<")));
+
+            
+            solution = new Tuple<char[],int,string>(new char[30], nz, cmd);
+            Array.Copy(zones, solution.Item1,30);  
+            
+            solutions.Add(solution);  
+            //Console.Error.WriteLine("ContainsR: Solution Memory: " + string.Concat(solution.Item1.Select(c => c == ' ' ? '-' : c)));
+            Array.Copy(memory, zones, 30);        
+        }
+        
+        // write command for Phrase then write loop
+        var ps = ProcessPhrase(phrase.ToArray(), z);
+        Array.Copy(ps.Item1, zones, 30);
+        cmd = ps.Item3.Replace(".","");
+        nz = ps.Item2;
+        int check = nz == 0 ? 29 : nz -1;
+        int direction = 1;
+        if( phrase.Length > 1 )
+        {
+            direction = zones[check] == phrase[phrase.Length-2] ? 1 : -1;
+            
+            nz += direction;
+            if( nz < 0 ) nz = 30 - nz;
+            if( nz > 29 ) nz = nz - 30;
+        }
+
+        // write counter
+        cmd += direction > 0 ? '>' : '<';
+        nz += direction;
+
+        //Console.Error.WriteLine("Write: Writing counter value {0} at Memory Pos: {1}", (char)(64 + repeat), nz);
+        cmd += SetRune( (char)(64 + repeat), nz );
+
+        // write the loop
+        cmd += string.Format("[{0}{1}-]", 
+                    "".PadRight(phrase.Length,direction > 0 ? '<' : '>'), 
+                    string.Join("",Enumerable.Range(0, phrase.Length).Select(i => direction > 0 ?".>" : ".<"))
+                    );
+
+        
+        solution = new Tuple<char[],int,string>(new char[30], nz, cmd);
+        Array.Copy(zones, solution.Item1,30);  
+        
+        solutions.Add(solution);  
+        //Console.Error.WriteLine("Write: Solution Memory: " + string.Concat(solution.Item1.Select(c => c == ' ' ? '-' : c)));
+            
+        Array.Copy(memory, zones, 30);
+        
+        
+        solution = solutions.OrderBy(s => s.Item3.Length).First();
+        
+        Array.Copy(solution.Item1, zones, 30);
+
+        return new Tuple<int, string>(solution.Item2, solution.Item3);
     }
     static Tuple<int, string> MoveToRune(char rune, int z)
     {
-        
         var solutions = new List<Tuple<int, string>>();
-        if( rune == ' ' )
+        if (rune == ' ')
         {
             solutions.Add(MoveToSpace(z, false));
             solutions.Add(MoveToSpace(z, true));
         }
         else
         {
-            solutions.Add( MoveToRune(rune, z, false));
+            solutions.Add(MoveToRune(rune, z, false));
 
-            solutions.Add( MoveToRune(rune, z, true));
+            solutions.Add(MoveToRune(rune, z, true));
+
 
             // Forward to Space, Move Forward | Move Backward
             var lF = MoveToSpace(z);
-            solutions.Add( MoveToRune(rune, lF.Item1, false, lF.Item2));
-            solutions.Add( MoveToRune(rune, lF.Item1, true, lF.Item2));
+            solutions.Add(MoveToRune(rune, lF.Item1, false, lF.Item2));
+            solutions.Add(MoveToRune(rune, lF.Item1, true, lF.Item2));
 
             // Backward to Space, Move Forward | Move Backward
             var lB = MoveToSpace(z, true);
-            solutions.Add( MoveToRune(rune, lB.Item1, false, lB.Item2));
-            solutions.Add( MoveToRune(rune, lB.Item1, true, lB.Item2));
+            solutions.Add(MoveToRune(rune, lB.Item1, false, lB.Item2));
+            solutions.Add(MoveToRune(rune, lB.Item1, true, lB.Item2));
         }
 
         return solutions.OrderBy(s => s.Item2.Length).First();
@@ -86,46 +438,67 @@ class bilbo
     {
         int nZ = z;
         string instruction = string.Empty;
-        if( zones[nZ] == rune) return new Tuple<int,string>(nZ,instruction);
-        
-        while(zones[nZ] != rune)
+        if (zones[nZ] == rune) return new Tuple<int, string>(nZ, instruction);
+
+        while (zones[nZ] != rune)
         {
-            if( backward ) 
+            if (backward)
             {
                 instruction += '<';
-                if( --nZ < 0) nZ = 29;
-            } 
+                if (--nZ < 0) nZ = 29;
+            }
             else
             {
                 instruction += '>';
-                if( ++nZ >= 30) nZ = 0;
+                if (++nZ >= 30) nZ = 0;
             }
         }
-    
-        return new Tuple<int,string>(nZ,prepend + instruction);
+
+        return new Tuple<int, string>(nZ, prepend + instruction);
+    }
+    static string MoveToAddress(int z, int nz)
+    {
+        var solutions = new List<string>();
+        var lF = MoveToSpace(z);
+        var lB = MoveToSpace(z, true);
+        
+        Func<int,int,int> forward = (int x, int y) => x < y ? 30 + y - x : x - y;
+        Func<int,int,int> backward = (int x, int y) => x > y ? 30 + y - x : y - x;
+
+        solutions.Add("".PadRight(forward(nz,z), '>'));
+        solutions.Add(lF.Item2 + "".PadRight(forward(nz,lF.Item1), '>'));
+        solutions.Add(lB.Item2 + "".PadRight(forward(nz,lB.Item1), '>'));
+
+        solutions.Add("".PadRight(backward(nz,z), '<'));
+        solutions.Add(lF.Item2 + "".PadRight(backward(nz,lF.Item1), '<'));
+        solutions.Add(lB.Item2 + "".PadRight(backward(nz,lB.Item1), '<'));
+        
+        return solutions.OrderBy(s => s.Length).First();
     }
     static Tuple<int, string> MoveToSpace(int z, bool backward = false)
     {
-        
+
         var cmd = string.Empty;
-               
-        if( backward) 
+        if (!zones.Contains(' '))
+            return new Tuple<int, string>(z, "");
+
+        if (backward)
         {
-            while(zones[z] != ' ')
-            { 
+            while (zones[z] != ' ')
+            {
                 cmd += "<";
-                if(--z < 0) z = 29; 
-            } 
-            return new Tuple<int,string>(z, cmd.Length < 3 ? cmd : "[<]");
+                if (--z < 0) z = 29;
+            }
+            return new Tuple<int, string>(z, cmd.Length < 3 ? cmd : "[<]");
         }
 
-        while(zones[z] != ' ')
-        { 
-            
+        while (zones[z] != ' ')
+        {
+
             cmd += ">";
-            if(++z > 29) z = 0; 
-        } 
-        return new Tuple<int,string>(z, cmd.Length < 3 ? cmd : "[>]");
+            if (++z > 29) z = 0;
+        }
+        return new Tuple<int, string>(z, cmd.Length < 3 ? cmd : "[>]");
 
     }
 
@@ -135,16 +508,16 @@ class bilbo
 
         var cR = zones[z];
 
-        solutions.Add( ClearRune(z) + SetRune(rune, z, false));
+        solutions.Add(ClearRune(z) + SetRune(rune, z, false));
         zones[z] = cR;
 
-        solutions.Add( ClearRune(z) + SetRune(rune, z, true));
+        solutions.Add(ClearRune(z) + SetRune(rune, z, true));
         zones[z] = cR;
 
         solutions.Add(SetRune(rune, z, false));
         zones[z] = cR;
 
-        solutions.Add( SetRune(rune, z, true));        
+        solutions.Add(SetRune(rune, z, true));
         zones[z] = cR;
 
         return solutions.OrderBy(s => s.Length).First();
@@ -152,502 +525,36 @@ class bilbo
     static string SetRune(char rune, int z, bool backward)
     {
         string instruction = string.Empty;
-        if( zones[z] == rune) return instruction;
-        
-        while(zones[z] != rune)
+        if (zones[z] == rune) return instruction;
+
+        while (zones[z] != rune)
         {
-            if( backward ) 
+            if (backward)
             {
-                if( zones[z] == 'A') zones[z] = ' ';
-                else if( zones[z] == ' ') zones[z] = 'Z';
+                if (zones[z] == 'A') zones[z] = ' ';
+                else if (zones[z] == ' ') zones[z] = 'Z';
                 else zones[z] = (char)((int)zones[z] - 1);
-                
+
                 instruction += '-';
-            } 
+            }
             else
             {
-                if( zones[z] == 'Z') zones[z] = ' ';
-                else if( zones[z] == ' ') zones[z] = 'A';
+                if (zones[z] == 'Z') zones[z] = ' ';
+                else if (zones[z] == ' ') zones[z] = 'A';
                 else zones[z] = (char)((int)zones[z] + 1);
-                
+
                 instruction += '+';
             }
         }
-    
+
         return instruction;
     }
-    static string ClearRune(int z) 
+    static string ClearRune(int z)
     {
-        if( zones[z] == ' ') return string.Empty;
+        if (zones[z] == ' ') return string.Empty;
+        if (zones[z] == 'A') return "-";
+        if (zones[z] == 'Z') return "+";
+
         return "[+]";
-    } 
-
-
-    class SuffixTree
-	{
-		public char? CanonizationChar { get; set; }
-		public string Word { get; private set; }
-		private int CurrentSuffixStartIndex { get; set; }
-		private int CurrentSuffixEndIndex { get; set; }
-		private Node LastCreatedNodeInCurrentIteration { get; set; }
-		private int UnresolvedSuffixes { get; set; }
-		public Node RootNode { get; private set; }
-		private Node ActiveNode { get; set; }
-		private Edge ActiveEdge { get; set; }
-		private int DistanceIntoActiveEdge { get; set; }
-		private char LastCharacterOfCurrentSuffix { get; set; }
-		private int NextNodeNumber { get; set; }
-		private int NextEdgeNumber { get; set; }
-
-		public SuffixTree(string word)
-		{
-			Word = word;
-			RootNode = new Node(this);
-			ActiveNode = RootNode;
-		}
-
-		public event Action<SuffixTree> Changed;
-		private void TriggerChanged()
-		{
-			var handler = Changed;
-			if(handler != null)
-				handler(this);
-		}
-
-		public event Action<string, object[]> Message;
-		private void SendMessage(string format, params object[] args)
-		{
-			var handler = Message;
-			if(handler != null)
-				handler(format, args);
-		}
-
-		public static SuffixTree Create(string word, char canonizationChar = '$')
-		{
-			var tree = new SuffixTree(word);
-			tree.Build(canonizationChar);
-			return tree;
-		}
-
-		public void Build(char canonizationChar)
-		{
-			var n = Word.IndexOf(Word[Word.Length - 1]);
-			var mustCanonize = n < Word.Length - 1;
-			if(mustCanonize)
-			{
-				CanonizationChar = canonizationChar;
-				Word = string.Concat(Word, canonizationChar);
-			}
-
-			for(CurrentSuffixEndIndex = 0; CurrentSuffixEndIndex < Word.Length; CurrentSuffixEndIndex++)
-			{
-				SendMessage("=== ITERATION {0} ===", CurrentSuffixEndIndex);
-				LastCreatedNodeInCurrentIteration = null;
-				LastCharacterOfCurrentSuffix = Word[CurrentSuffixEndIndex];
-
-				for(CurrentSuffixStartIndex = CurrentSuffixEndIndex - UnresolvedSuffixes; CurrentSuffixStartIndex <= CurrentSuffixEndIndex; CurrentSuffixStartIndex++)
-				{
-					var wasImplicitlyAdded = !AddNextSuffix();
-					if(wasImplicitlyAdded)
-					{
-						UnresolvedSuffixes++;
-						break;
-					}
-					if(UnresolvedSuffixes > 0)
-						UnresolvedSuffixes--;
-				}
-			}
-		}
-
-		private bool AddNextSuffix()
-		{
-			var suffix = string.Concat(Word.Substring(CurrentSuffixStartIndex, CurrentSuffixEndIndex - CurrentSuffixStartIndex), "{", Word[CurrentSuffixEndIndex], "}");
-			SendMessage("The next suffix of '{0}' to add is '{1}' at indices {2},{3}", Word, suffix, CurrentSuffixStartIndex, CurrentSuffixEndIndex);
-			SendMessage(" => ActiveNode:             {0}", ActiveNode);
-			SendMessage(" => ActiveEdge:             {0}", ActiveEdge == null ? "none" : ActiveEdge.ToString());
-			SendMessage(" => DistanceIntoActiveEdge: {0}", DistanceIntoActiveEdge);
-			SendMessage(" => UnresolvedSuffixes:     {0}", UnresolvedSuffixes);
-			if(ActiveEdge != null && DistanceIntoActiveEdge >= ActiveEdge.Length)
-				throw new Exception("BOUNDARY EXCEEDED");
-
-			if(ActiveEdge != null)
-				return AddCurrentSuffixToActiveEdge();
-
-			if(GetExistingEdgeAndSetAsActive())
-				return false;
-
-			ActiveNode.AddNewEdge();
-			TriggerChanged();
-
-			UpdateActivePointAfterAddingNewEdge();
-			return true;
-		}
-
-		private bool GetExistingEdgeAndSetAsActive()
-		{
-			Edge edge;
-			if(ActiveNode.Edges.TryGetValue(LastCharacterOfCurrentSuffix, out edge))
-			{
-				SendMessage("Existing edge for {0} starting with '{1}' found. Values adjusted to:", ActiveNode, LastCharacterOfCurrentSuffix);
-				ActiveEdge = edge;
-				DistanceIntoActiveEdge = 1;
-				TriggerChanged();
-
-				NormalizeActivePointIfNowAtOrBeyondEdgeBoundary(ActiveEdge.StartIndex);
-				SendMessage(" => ActiveEdge is now: {0}", ActiveEdge);
-				SendMessage(" => DistanceIntoActiveEdge is now: {0}", DistanceIntoActiveEdge);
-				SendMessage(" => UnresolvedSuffixes is now: {0}", UnresolvedSuffixes);
-
-				return true;
-			}
-			SendMessage("Existing edge for {0} starting with '{1}' not found", ActiveNode, LastCharacterOfCurrentSuffix);
-			return false;
-		}
-
-		private bool AddCurrentSuffixToActiveEdge()
-		{
-			var nextCharacterOnEdge = Word[ActiveEdge.StartIndex + DistanceIntoActiveEdge];
-			if(nextCharacterOnEdge == LastCharacterOfCurrentSuffix)
-			{
-				SendMessage("The next character on the current edge is '{0}' (suffix added implicitly)", LastCharacterOfCurrentSuffix);
-				DistanceIntoActiveEdge++;
-				TriggerChanged();
-
-				SendMessage(" => DistanceIntoActiveEdge is now: {0}", DistanceIntoActiveEdge);
-				NormalizeActivePointIfNowAtOrBeyondEdgeBoundary(ActiveEdge.StartIndex);
-
-				return false;
-			}
-
-			SplitActiveEdge();
-			ActiveEdge.Tail.AddNewEdge();
-			TriggerChanged();
-
-			UpdateActivePointAfterAddingNewEdge();
-
-			return true;
-		}
-
-		private void UpdateActivePointAfterAddingNewEdge()
-		{
-			if(ReferenceEquals(ActiveNode, RootNode))
-			{
-				if(DistanceIntoActiveEdge > 0)
-				{
-					SendMessage("New edge has been added and the active node is root. The active edge will now be updated.");
-					DistanceIntoActiveEdge--;
-					SendMessage(" => DistanceIntoActiveEdge decremented to: {0}", DistanceIntoActiveEdge);
-					ActiveEdge = DistanceIntoActiveEdge == 0 ? null : ActiveNode.Edges[Word[CurrentSuffixStartIndex + 1]];
-					SendMessage(" => ActiveEdge is now: {0}", ActiveEdge);
-					TriggerChanged();
-
-					NormalizeActivePointIfNowAtOrBeyondEdgeBoundary(CurrentSuffixStartIndex + 1);
-				}
-			}
-			else
-				UpdateActivePointToLinkedNodeOrRoot();
-		}
-
-		private void NormalizeActivePointIfNowAtOrBeyondEdgeBoundary(int firstIndexOfOriginalActiveEdge)
-		{
-			var walkDistance = 0;
-			while(ActiveEdge != null && DistanceIntoActiveEdge >= ActiveEdge.Length)
-			{
-				SendMessage("Active point is at or beyond edge boundary and will be moved until it falls inside an edge boundary");
-				DistanceIntoActiveEdge -= ActiveEdge.Length;
-				ActiveNode = ActiveEdge.Tail ?? RootNode;
-				if(DistanceIntoActiveEdge == 0)
-					ActiveEdge = null;
-				else
-				{
-					walkDistance += ActiveEdge.Length;
-					var c = Word[firstIndexOfOriginalActiveEdge + walkDistance];
-					ActiveEdge = ActiveNode.Edges[c];
-				}
-				TriggerChanged();
-			}
-		}
-
-		private void SplitActiveEdge()
-		{
-			ActiveEdge = ActiveEdge.SplitAtIndex(ActiveEdge.StartIndex + DistanceIntoActiveEdge);
-			SendMessage(" => ActiveEdge is now: {0}", ActiveEdge);
-			TriggerChanged();
-			if(LastCreatedNodeInCurrentIteration != null)
-			{
-				LastCreatedNodeInCurrentIteration.LinkedNode = ActiveEdge.Tail;
-				SendMessage(" => Connected {0} to {1}", LastCreatedNodeInCurrentIteration, ActiveEdge.Tail);
-				TriggerChanged();
-			}
-			LastCreatedNodeInCurrentIteration = ActiveEdge.Tail;
-		}
-
-		private void UpdateActivePointToLinkedNodeOrRoot()
-		{
-			SendMessage("The linked node for active node {0} is {1}", ActiveNode, ActiveNode.LinkedNode == null ? "[null]" : ActiveNode.LinkedNode.ToString());
-			if(ActiveNode.LinkedNode != null)
-			{
-				ActiveNode = ActiveNode.LinkedNode;
-				SendMessage(" => ActiveNode is now: {0}", ActiveNode);
-			}
-			else
-			{
-				ActiveNode = RootNode;
-				SendMessage(" => ActiveNode is now ROOT", ActiveNode);
-			}
-			TriggerChanged();
-
-			if(ActiveEdge != null)
-			{
-				var firstIndexOfOriginalActiveEdge = ActiveEdge.StartIndex;
-				ActiveEdge = ActiveNode.Edges[Word[ActiveEdge.StartIndex]];
-				TriggerChanged();
-				NormalizeActivePointIfNowAtOrBeyondEdgeBoundary(firstIndexOfOriginalActiveEdge);
-			}
-		}
-
-		public string RenderTree()
-		{
-			var writer = new StringWriter();
-			RootNode.RenderTree(writer, "");
-			return writer.ToString();
-		}
-
-		public string WriteDotGraph()
-		{
-			var sb = new StringBuilder();
-			sb.AppendLine("digraph {");
-			sb.AppendLine("rankdir = LR;");
-			sb.AppendLine("edge [arrowsize=0.5,fontsize=11];");
-			for(var i = 0; i < NextNodeNumber; i++)
-				sb.AppendFormat("node{0} [label=\"{0}\",style=filled,fillcolor={1},shape=circle,width=.1,height=.1,fontsize=11,margin=0.01];",
-					i, ActiveNode.NodeNumber == i ? "cyan" : "lightgrey").AppendLine();
-			RootNode.WriteDotGraph(sb);
-			sb.AppendLine("}");
-			return sb.ToString();
-		}
-
-		public HashSet<string> ExtractAllSubstrings()
-		{
-			var set = new HashSet<string>();
-			ExtractAllSubstrings("", set, RootNode);
-			return set;
-		}
-
-		private void ExtractAllSubstrings(string str, HashSet<string> set, Node node)
-		{
-			foreach(var edge in node.Edges.Values)
-			{
-				var edgeStr = edge.StringWithoutCanonizationChar;
-				var edgeLength = !edge.EndIndex.HasValue && CanonizationChar.HasValue ? edge.Length - 1 : edge.Length; // assume tailing canonization char
-				for(var length = 1; length <= edgeLength; length++)
-					set.Add(string.Concat(str, edgeStr.Substring(0, length)));
-				if(edge.Tail != null)
-					ExtractAllSubstrings(string.Concat(str, edge.StringWithoutCanonizationChar), set, edge.Tail);
-			}
-		}
-
-		public List<string> ExtractSubstringsForIndexing(int? maxLength = null)
-		{
-			var list = new List<string>();
-			ExtractSubstringsForIndexing("", list, maxLength ?? Word.Length, RootNode);
-			return list;
-		}
-
-		private void ExtractSubstringsForIndexing(string str, List<string> list, int len, Node node)
-		{
-			foreach(var edge in node.Edges.Values)
-			{
-				var newstr = string.Concat(str, Word.Substring(edge.StartIndex, Math.Min(len, edge.Length)));
-				if(len > edge.Length && edge.Tail != null)
-					ExtractSubstringsForIndexing(newstr, list, len - edge.Length, edge.Tail);
-				else
-					list.Add(newstr);
-			}
-		}
-
-		public class Edge
-		{
-			private readonly SuffixTree _tree;
-
-			public Edge(SuffixTree tree, Node head)
-			{
-				_tree = tree;
-				Head = head;
-				StartIndex = tree.CurrentSuffixEndIndex;
-				EdgeNumber = _tree.NextEdgeNumber++;
-			}
-
-			public Node Head { get; private set; }
-			public Node Tail { get; private set; }
-			public int StartIndex { get; private set; }
-			public int? EndIndex { get; set; }
-			public int EdgeNumber { get; private set; }
-			public int Length { get { return (EndIndex ?? _tree.Word.Length - 1) - StartIndex + 1; } }
-
-			public Edge SplitAtIndex(int index)
-			{
-				_tree.SendMessage("Splitting edge {0} at index {1} ('{2}')", this, index, _tree.Word[index]);
-				var newEdge = new Edge(_tree, Head);
-				var newNode = new Node(_tree);
-				newEdge.Tail = newNode;
-				newEdge.StartIndex = StartIndex;
-				newEdge.EndIndex = index - 1;
-				Head = newNode;
-				StartIndex = index;
-				newNode.Edges.Add(_tree.Word[StartIndex], this);
-				newEdge.Head.Edges[_tree.Word[newEdge.StartIndex]] = newEdge;
-				_tree.SendMessage(" => Hierarchy is now: {0} --> {1} --> {2} --> {3}", newEdge.Head, newEdge, newNode, this);
-				return newEdge;
-			}
-
-			public override string ToString()
-			{
-				return string.Concat(_tree.Word.Substring(StartIndex, (EndIndex ?? _tree.CurrentSuffixEndIndex) - StartIndex + 1), "(",
-					StartIndex, ",", EndIndex.HasValue ? EndIndex.ToString() : "#", ")");
-			}
-
-			public string StringWithoutCanonizationChar
-			{
-				get { return _tree.Word.Substring(StartIndex, (EndIndex ?? _tree.CurrentSuffixEndIndex - (_tree.CanonizationChar.HasValue ? 1 : 0)) - StartIndex + 1); }
-			}
-
-			public string String
-			{
-				get { return _tree.Word.Substring(StartIndex, (EndIndex ?? _tree.CurrentSuffixEndIndex) - StartIndex + 1); }
-			}
-
-			public void RenderTree(TextWriter writer, string prefix, int maxEdgeLength)
-			{
-				var strEdge = _tree.Word.Substring(StartIndex, (EndIndex ?? _tree.CurrentSuffixEndIndex) - StartIndex + 1);
-				writer.Write(strEdge);
-				if(Tail == null)
-					writer.WriteLine();
-				else
-				{
-					var line = new string(RenderChars.HorizontalLine, maxEdgeLength - strEdge.Length + 1);
-					writer.Write(line);
-					Tail.RenderTree(writer, string.Concat(prefix, new string(' ', strEdge.Length + line.Length)));
-				}
-			}
-
-			public void WriteDotGraph(StringBuilder sb)
-			{
-				if(Tail == null)
-					sb.AppendFormat("leaf{0} [label=\"\",shape=point]", EdgeNumber).AppendLine();
-				string label, weight, color;
-				if(_tree.ActiveEdge != null && ReferenceEquals(this, _tree.ActiveEdge))
-				{
-					if(_tree.ActiveEdge.Length == 0)
-						label = "";
-					else if(_tree.DistanceIntoActiveEdge > Length)
-						label = "<<FONT COLOR=\"red\" SIZE=\"11\"><B>" + String + "</B> (" + _tree.DistanceIntoActiveEdge + ")</FONT>>";
-					else if(_tree.DistanceIntoActiveEdge == Length)
-						label = "<<FONT COLOR=\"red\" SIZE=\"11\">" + String + "</FONT>>";
-					else if(_tree.DistanceIntoActiveEdge > 0)
-						label = "<<TABLE BORDER=\"0\" CELLPADDING=\"0\" CELLSPACING=\"0\"><TR><TD><FONT COLOR=\"blue\"><B>" + String.Substring(0, _tree.DistanceIntoActiveEdge) + "</B></FONT></TD><TD COLOR=\"black\">" + String.Substring(_tree.DistanceIntoActiveEdge) + "</TD></TR></TABLE>>";
-					else
-						label = "\"" + String + "\"";
-					color = "blue";
-					weight = "5";
-				}
-				else
-				{
-					label = "\"" + String + "\"";
-					color = "black";
-					weight = "3";
-				}
-				var tail = Tail == null ? "leaf" + EdgeNumber : "node" + Tail.NodeNumber;
-				sb.AppendFormat("node{0} -> {1} [label={2},weight={3},color={4},size=11]", Head.NodeNumber, tail, label, weight, color).AppendLine();
-				if(Tail != null)
-					Tail.WriteDotGraph(sb);
-			}
-		}
-
-		public class Node
-		{
-			private readonly SuffixTree _tree;
-
-			public Node(SuffixTree tree)
-			{
-				_tree = tree;
-				Edges = new Dictionary<char, Edge>();
-				NodeNumber = _tree.NextNodeNumber++;
-			}
-
-			public Dictionary<char, Edge> Edges { get; private set; }
-			public Node LinkedNode { get; set; }
-			public int NodeNumber { get; private set; }
-
-			public void AddNewEdge()
-			{
-				_tree.SendMessage("Adding new edge to {0}", this);
-				var edge = new Edge(_tree, this);
-				Edges.Add(_tree.Word[_tree.CurrentSuffixEndIndex], edge);
-				_tree.SendMessage(" => {0} --> {1}", this, edge);
-			}
-
-			public void RenderTree(TextWriter writer, string prefix)
-			{
-				var strNode = string.Concat("(", NodeNumber.ToString(new string('0', _tree.NextNodeNumber.ToString().Length)), ")");
-				writer.Write(strNode);
-				var edges = Edges.Select(kvp => kvp.Value).OrderBy(e => _tree.Word[e.StartIndex]).ToArray();
-				if(edges.Any())
-				{
-					var prefixWithNodePadding = prefix + new string(' ', strNode.Length);
-					var maxEdgeLength = edges.Max(e => (e.EndIndex ?? _tree.CurrentSuffixEndIndex) - e.StartIndex + 1);
-					for(var i = 0; i < edges.Length; i++)
-					{
-						char connector, extender = ' ';
-						if(i == 0)
-						{
-							if(edges.Length > 1)
-							{
-								connector = RenderChars.TJunctionDown;
-								extender = RenderChars.VerticalLine;
-							}
-							else
-								connector = RenderChars.HorizontalLine;
-						}
-						else
-						{
-							writer.Write(prefixWithNodePadding);
-							if(i == edges.Length - 1)
-								connector = RenderChars.CornerRight;
-							else
-							{
-								connector = RenderChars.TJunctionRight;
-								extender = RenderChars.VerticalLine;
-							}
-						}
-						writer.Write(string.Concat(connector, RenderChars.HorizontalLine));
-						var newPrefix = string.Concat(prefixWithNodePadding, extender, ' ');
-						edges[i].RenderTree(writer, newPrefix, maxEdgeLength);
-					}
-				}
-			}
-
-			public override string ToString()
-			{
-				return string.Concat("node #", NodeNumber);
-			}
-
-			public void WriteDotGraph(StringBuilder sb)
-			{
-				if(LinkedNode != null)
-					sb.AppendFormat("node{0} -> node{1} [label=\"\",weight=.01,style=dotted]", NodeNumber, LinkedNode.NodeNumber).AppendLine();
-				foreach(var edge in Edges.Values)
-					edge.WriteDotGraph(sb);
-			}
-		}
-
-		public static class RenderChars
-		{
-			public const char TJunctionDown = '┬';
-			public const char HorizontalLine = '─';
-			public const char VerticalLine = '│';
-			public const char TJunctionRight = '├';
-			public const char CornerRight = '└';
-		}
-	}
+    }
 }

@@ -9,7 +9,7 @@ using System.Collections.Generic;
  * Auto-generated code below aims at helping you parse
  * the standard input according to the problem statement.
  **/
-class Player
+class Anakin2
 {
     static void Main(string[] args)
     {
