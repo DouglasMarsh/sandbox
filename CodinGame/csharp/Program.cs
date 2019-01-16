@@ -8,15 +8,26 @@ namespace csharp
     {
         static void Main(string[] args)
         {
-            var phrase = "BABCDEDCBABCDCB";
-            //++.-.+.+.+.+.-.-.-.-.+.+.+.-.-.
+            var expected = "NONONONONONONONONONONONONONONONONONONONO";
 
-            using( var reader = new StringReader(phrase))
+            using( var reader = new StringReader(expected))
             {
-                bilbo.Process(reader, Console.Out, Console.Error);
+                using( var writer = new StringWriter())
+                {
+                    //bilbo.Process(reader, writer, Console.Error);
+                    //var cmd = writer.ToString().Trim();
+                    var cmd = "------------>-------[<-.+.>-]";
+                    var actual = bilbo.ExecuteCmd(cmd);
+                
+                    if( !actual.Equals(expected))
+                    {
+                        throw new ApplicationException(
+                            string.Format("Invalid Command. Expected output {0}. Actual {1}", expected, actual));
+                    }
+                }
             }
             Console.Write("Press Any key to exit");
-            Console.ReadKey(false);
+            Console.Read();
         }
     }
 }

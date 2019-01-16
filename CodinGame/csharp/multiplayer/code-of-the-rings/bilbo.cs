@@ -21,6 +21,60 @@ public class bilbo
     static Regex hasDuplicates = new Regex("(.+?)\\1+", RegexOptions.Compiled);
     static char[] zones = string.Empty.PadRight(30, ' ').ToArray();
     public static void Main(string[] args) => Process(Console.In, Console.Out, Console.Error);
+    public static string ExecuteCmd(string cmd) 
+    {
+        string spell = string.Empty;
+            
+        Console.WriteLine();
+        using(var output = new StringWriter())
+        {
+            char[] memory = string.Empty.PadRight(30, ' ').ToArray();
+            int addr = 0;
+            var loops = new Stack<int>();
+            bool skipLoop = false;
+            for( int i = 0; i < cmd.Length; i++)
+            {
+                if( skipLoop )
+                {
+                    skipLoop = cmd[i] == ']';
+                    continue;
+                }
+                switch (cmd[i])
+                {
+                    case '.':
+                        spell += memory[addr];
+                        Console.Write(memory[addr]);
+                        break;
+                    case '+':
+                        IncrementMemory(memory, addr);
+                        break;
+                    case '-':
+                        DecrementMemory(memory,addr);
+                        break;
+                    case '>':
+                        addr = AdjustPosition(++ addr);
+                        break;
+                    case '<':
+                        addr = AdjustPosition(-- addr);
+                        break;
+                    case '[':
+                        loops.Push(i);
+                        skipLoop = memory[addr] == ' ';
+                        break;
+                    case ']':
+                        int loopI = loops.Pop();
+                        if(memory[addr] != ' ' )
+                            i = loopI - 1;
+                        break;
+                    default:
+                        throw new InvalidOperationException("Unknown Operator: " + cmd[i]);
+                        
+                }
+            }
+        }
+        Console.WriteLine();
+        return spell;
+    }
     public static void Process(TextReader input, TextWriter output, TextWriter error)
     {
         string magicPhrase = input.ReadLine();
@@ -31,42 +85,40 @@ public class bilbo
         int i = 0;
         while(i < magicPhrase.Length)
         {
-            error.WriteLine("Spell idx {0}: Memory: {1}", i, string.Concat(zones.Select(c => c == ' ' ? '-' : c)));
-            string sequence = IdentifySequence(magicPhrase.Skip(i).ToArray());
-            if( !string.IsNullOrEmpty(sequence))
-            {
-                error.WriteLine("Processing sequence: " + sequence);
-                solution = ProcessSequence(sequence, z);
-                instruction += solution.Item2;
-                z = solution.Item1;
-                i += sequence.Length;
-
-                error.WriteLine("After Sequence: Spell idx {0}: Memory: {1}", i, string.Concat(zones.Select(c => c == ' ' ? '-' : c)));
-                continue;
-            }
-
             var duplicate = IdentifyDuplicates( string.Concat(magicPhrase.Skip(i)) );
             if( duplicate != null )
             {
-                error.WriteLine("Processing duplicate {0} * {1}", duplicate.Item1, duplicate.Item2);
+                //error.WriteLine("Processing duplicate {0} * {1}", duplicate.Item1, duplicate.Item2);
                 
                 solution = ProcessDuplicatePhrase(duplicate.Item1, duplicate.Item2, z);
                 instruction += solution.Item2;
                 z = solution.Item1;
                 i += duplicate.Item1.Length * duplicate.Item2;
                 
-                error.WriteLine("After Duplicate: Spell idx {0}: Memory: {1}", i, string.Concat(zones.Select(c => c == ' ' ? '-' : c)));
+                //error.WriteLine("After Duplicate: Spell idx {0}: Memory: {1}", i, string.Concat(zones.Select(c => c == ' ' ? '-' : c)));
                 continue;
             }
 
-            error.WriteLine("Processing rune: " + magicPhrase[i]);
-                
+            string sequence = IdentifySequence(magicPhrase.Skip(i).ToArray());
+            if( !string.IsNullOrEmpty(sequence))
+            {
+                //error.WriteLine("Processing sequence: " + sequence);
+                solution = ProcessSequence(sequence, z);
+                instruction += solution.Item2;
+                z = solution.Item1;
+                i += sequence.Length;
+
+                //error.WriteLine("After Sequence: Spell idx {0}: Memory: {1}", i, string.Concat(zones.Select(c => c == ' ' ? '-' : c)));
+                continue;
+            }
+
             solution = ProcessRune(magicPhrase[i], z);
-            instruction += solution.Item2;
+            instruction += solution.Item2 + ".";
             z = solution.Item1;
+            zones[z] = magicPhrase[i];
             i++;
                 
-            error.WriteLine("After ProcessRune: Spell idx {0}: Memory: {1}", i, string.Concat(zones.Select(c => c == ' ' ? '-' : c)));
+            //error.WriteLine("After ProcessRune: Spell idx {0}: Memory: {1}", i, string.Concat(zones.Select(c => c == ' ' ? '-' : c)));
                 
         }
         while(instruction.Contains("<>") || instruction.Contains("><") || instruction.Contains("+-") || instruction.Contains("-+"))
@@ -81,51 +133,152 @@ public class bilbo
     }
     static Tuple<int, string> ProcessRune( char rune, int z)
     {
-        var solution = ProcessPhrase( new[] { rune }, z);
+        var memory = new char[30];
+        Array.Copy(zones, memory,30);
+
+        Tuple<char[], int, string> solution = null;
+        var solutions = new List<Tuple<char[], int, string>>();
+        solutions.Clear();
+        
+        if (zones.Contains(rune))
+        {
+            var s = MoveToRune(rune, z);
+            solution = new Tuple<char[], int, string>(new char[30], s.Item1, s.Item2);
+            Array.Copy(zones, solution.Item1,30);
+            solutions.Add(solution);
+            
+            Array.Copy(memory, zones,30);
+        }
+        
+        solution = new Tuple<char[], int, string>(new char[30], z, SetRune(rune, z));
+        Array.Copy(zones, solution.Item1,30);
+        solutions.Add(solution);
+
+        Array.Copy(memory, zones,30);
+
+        var m2s = MoveToSpace(z, false);
+        solution = new Tuple<char[], int, string>(new char[30], m2s.Item1, m2s.Item2 + SetRune(rune, m2s.Item1));
+        Array.Copy(zones, solution.Item1,30);
+        solutions.Add(solution);
+
+        Array.Copy(memory, zones,30);
+
+        m2s = MoveToSpace(z, true);
+        solution = new Tuple<char[], int, string>(new char[30], m2s.Item1, m2s.Item2 + SetRune(rune, m2s.Item1));
+        Array.Copy(zones, solution.Item1,30);
+        solutions.Add(solution);
+
+        Array.Copy(memory, zones,30);
+
+        solution = solutions.OrderBy(s => s.Item3.Length).First();
         Array.Copy(solution.Item1, zones, 30);
 
         return new Tuple<int, string>(solution.Item2, solution.Item3);
     }
-    static Tuple<char[], int,string> ProcessPhrase(char[] phrase, int z)
+    static Tuple<char[], int,string> WritePhrase(char[] phrase, int z)
     {
         var memory = new char[30];
         Array.Copy(zones, memory,30);
-        
-        var solutions = new List<Tuple<int, string>>();
+        var sZones = string.Concat(zones);
+        var sPhrase = string.Concat(phrase);
         string cmd = string.Empty;
-        for (int i = 0; i < phrase.Length; i++)
+        int nz = z;
+        Tuple<char[],int, string> solution = null;
+        var solutions = new List<Tuple<char[],int, string>>();
+        
+        // find full phrase
+        if( !phrase.Except(zones).Any() )
         {
-            char rune = phrase[i];
-
-            solutions.Clear();
-            
-            if (zones.Contains(rune))
+            // find location of phrase that is nearest to current location
+            int phraseIdx = sZones.IndexOf(sPhrase);
+            int distTo = 30;
+            do
             {
-                solutions.Add(MoveToRune(rune, z));
-            }
+                if( Math.Abs(distTo) > Math.Abs(phraseIdx - z)) 
+                    distTo = phraseIdx - z;
 
-            solutions.Add(new Tuple<int, string>(z, SetRune(rune, z)));
+                if( phraseIdx + phrase.Length >= 30) break;
 
-            var m2s = MoveToSpace(z, false);
-            solutions.Add(new Tuple<int, string>(m2s.Item1, m2s.Item2 + SetRune(rune, m2s.Item1)));
+                phraseIdx = sZones.IndexOf(sPhrase, phraseIdx + phrase.Length);
+            } while( phraseIdx > 0);
 
-            m2s = MoveToSpace(z, true);
-            solutions.Add(new Tuple<int, string>(m2s.Item1, m2s.Item2 + SetRune(rune, m2s.Item1)));
+            // move to location
+            nz = AdjustPosition(z + distTo + phrase.Length);
 
-            var solution = solutions.OrderBy(s => s.Item2.Length).First();
-
-            z = solution.Item1;
-            zones[z] = rune;
-            cmd += solution.Item2 + ".";
+            cmd = MoveToAddress(z, nz);
+            solution = new Tuple<char[], int, string>(new char[30], nz, cmd);
+            Array.Copy(zones, solution.Item1,30);
+            solutions.Add(solution);
+            Array.Copy(memory, zones,30);
         }
 
-        var retval = new Tuple<char[], int, string>(new char[30], z, cmd);
-        Array.Copy(zones, retval.Item1,30);    
-        Array.Copy(memory, zones,30);
+        // find partial phrase;
+        var subPhrase = zones.Intersect(phrase).ToArray();
+        if( subPhrase.Length > 1)
+        {
+            // find location of phrase that is nearest to current location
+            var subP = string.Concat(subPhrase);
+            int spi = sPhrase.IndexOf(subP);
+            int phraseIdx = sZones.IndexOf(subP);
+            int distTo = 30;
+            do
+            {
+                if( Math.Abs(distTo) > Math.Abs(phraseIdx - z)) 
+                    distTo = phraseIdx - z;
 
-        return retval;
+                if( phraseIdx + subP.Length >= 30) break;
+
+                phraseIdx = sZones.IndexOf(subP, phraseIdx + subP.Length);
+            } while( phraseIdx > 0);
+
+            // move to location
+            nz = AdjustPosition(phraseIdx - spi);
+
+            cmd = MoveToAddress(z, nz);
+            for(int i = 0; i < phrase.Length; i++)
+            {
+                if( i == spi)
+                {
+                    cmd += "".PadRight(subPhrase.Length,'>');
+                    nz += subPhrase.Length;
+                    i += subPhrase.Length-1;
+                }
+                else
+                {
+                    cmd += SetRune(phrase[i], nz);
+                    cmd += '>';
+                    nz ++;
+                }
+                
+                nz = AdjustPosition(nz);
+            }
+            solution = new Tuple<char[], int, string>(new char[30], nz, cmd);
+            Array.Copy(zones, solution.Item1,30);
+            solutions.Add(solution);
+            Array.Copy(memory, zones,30);
+        }
+        
+        // write entire phrase
+        Tuple<int,string> partial = null;
+        if( zones.Contains(phrase[0])) partial = MoveToRune(phrase[0], z);
+        else partial = ProcessRune(phrase[0], z);
+
+        nz = partial.Item1;
+        cmd = partial.Item2;
+        #region Phrase
+        for(int i = 1; i < phrase.Length; i++)
+        {
+            cmd += '>' + SetRune(phrase[i], ++nz);
+        }
+        solution = new Tuple<char[], int, string>(new char[30], nz, cmd);
+        Array.Copy(zones, solution.Item1,30);
+        solutions.Add(solution);
+
+        Array.Copy(memory, zones,30);
+        #endregion
+
+        return solutions.OrderBy(s => s.Item3.Length).First();
     }
-    
     static string IdentifySequence(char[] phrase)
     {
         int i = 0;
@@ -150,7 +303,6 @@ public class bilbo
             }
             break;
         }
-
         return sequence;
     }
     static Tuple<int, string> ProcessSequence(string sequence, int z)
@@ -202,7 +354,8 @@ public class bilbo
             {
                 var mtr = MoveToRune(rune, z);
                 cmd = mtr.Item2;
-                nz = mtr.Item1+1;
+                zones[mtr.Item1] = sequence.Last();
+                nz = AdjustPosition(mtr.Item1+1);
 
                 // write counter
                 cmd += ">";
@@ -210,7 +363,7 @@ public class bilbo
 
                 // write the loop
                 cmd += direction < 0 ? "[<.->-]" : "[<.+>-]";
-
+                zones[nz] = ' ';
                 solution = new Tuple<char[],int,string>(new char[30], nz, cmd);
                 Array.Copy(zones, solution.Item1,30);  
                 
@@ -220,7 +373,8 @@ public class bilbo
 
             #region Sequence with Loop
             cmd = SetRune(rune, z);
-            nz = z+1;
+            zones[z] = sequence.Last();
+            nz = AdjustPosition(z+1);
 
             // write counter
             cmd += ">";
@@ -228,7 +382,7 @@ public class bilbo
 
             // write the loop
             cmd += direction < 0 ? "[<.->-]" : "[<.+>-]";
-
+            zones[nz] = ' ';
             solution = new Tuple<char[],int,string>(new char[30], nz, cmd);
             Array.Copy(zones, solution.Item1,30);  
             
@@ -237,7 +391,7 @@ public class bilbo
             #endregion
 
             // Sequence without loop
-            solution = ProcessPhrase(sequence.ToArray(), z);
+            solution = WritePhrase(sequence.ToArray(), z);
             solutions.Add(solution);  
             Array.Copy(memory, zones, 30);
 
@@ -256,8 +410,8 @@ public class bilbo
         {
             var dup = match.Groups[1].Value;
             int count = match.Value.Length / dup.Length;
-            
-            return new Tuple<string,int>(dup, Math.Min(26,count));
+            if( count > dup.Length)
+                return new Tuple<string,int>(dup, Math.Min(26,count));
         }
         return null;
     }
@@ -273,137 +427,49 @@ public class bilbo
         Tuple<char[], int,string> solution = null;
         var solutions = new List<Tuple<char[], int,string>>();
 
-        // does zones contain the phrase        
-        if(sZones.Contains(phrase))
-        {
-            // find location of phrase that is nearest to current location
-            int phraseIdx = sZones.IndexOf(phrase);
-            int distTo = 30;
-            do
-            {
-                if( Math.Abs(distTo) > Math.Abs(phraseIdx - z)) 
-                    distTo = phraseIdx - z;
-
-                if( phraseIdx + phrase.Length >= 30) break;
-
-                phraseIdx = sZones.IndexOf(phrase, phraseIdx + phrase.Length);
-            } while( phraseIdx > 0);
-
-            // move to location
-            nz = z + distTo + phrase.Length;
-            if( nz < 0 ) nz = 30 - nz;
-            if( nz > 29 ) nz = nz - 30;
-
-            cmd = MoveToAddress(z, nz);
-           
-            // write counter
-            //Console.Error.WriteLine("Contains: Writing counter value {0} at Memory Pos: {1}", (char)(64 + repeat), nz);
-            cmd += SetRune((char)(64 + repeat), nz );
-
-            // write the loop
-            cmd += string.Format("[{0}{1}-]", 
-                        "".PadRight(phrase.Length,'<'), 
-                        string.Join("",Enumerable.Range(0, phrase.Length).Select(i => ".>")));
-
-            
-            solution = new Tuple<char[],int,string>(new char[30], nz, cmd);
-            Array.Copy(zones, solution.Item1,30);  
-            
-            solutions.Add(solution);  
-            //Console.Error.WriteLine("Contains: Solution Memory: " + string.Concat(solution.Item1.Select(c => c == ' ' ? '-' : c)));
-            Array.Copy(memory, zones, 30);
-        }
-
-        // does zones contain the reverse phrase  
-        string rPhrase = string.Concat(phrase.Reverse());     
-        if(sZones.Contains(rPhrase))
-        {
-            cmd = string.Empty;
-            // find location of phrase that is nearest to current location
-            int phraseIdx = sZones.IndexOf(rPhrase);
-            int distTo = 30;
-            do
-            {
-                if( Math.Abs(distTo) > Math.Abs(phraseIdx - z)) 
-                    distTo = phraseIdx - z;
-
-                if( phraseIdx + rPhrase.Length >= 30) break;
-
-                phraseIdx = sZones.IndexOf(rPhrase, phraseIdx + phrase.Length);
-            } while( phraseIdx > 0);
-
-            // move to location
-            nz = z + distTo;
-            nz--;
-            //Console.Error.WriteLine("ContainsR: nz" + nz);
-
-            if( nz < 0 ) nz = 30 + nz;
-            if( nz > 29 ) nz = nz - 30;
-            cmd = MoveToAddress(z, nz);
-            //Console.Error.WriteLine("ContainsR: Moved {0} units from {1} to {2}", distTo, z, nz);
-            
-
-            // write counter
-            //Console.Error.WriteLine("ContainsR: Writing counter value {0} at Memory Pos: {1}", (char)(64 + repeat), nz);
-            cmd += SetRune((char)(64 + repeat), nz );
-
-            // write the loop
-            cmd += string.Format("[{0}{1}-]", 
-                        "".PadRight(phrase.Length,'>'), 
-                        string.Join("",Enumerable.Range(0, rPhrase.Length).Select(i => ".<")));
-
-            
-            solution = new Tuple<char[],int,string>(new char[30], nz, cmd);
-            Array.Copy(zones, solution.Item1,30);  
-            
-            solutions.Add(solution);  
-            //Console.Error.WriteLine("ContainsR: Solution Memory: " + string.Concat(solution.Item1.Select(c => c == ' ' ? '-' : c)));
-            Array.Copy(memory, zones, 30);        
-        }
+        solution = WritePhrase(phrase.ToArray(), z);
+        Array.Copy(solution.Item1, zones, 30);
+        nz = AdjustPosition(solution.Item2 + 1);
+        cmd = solution.Item3;
         
-        // write command for Phrase then write loop
-        var ps = ProcessPhrase(phrase.ToArray(), z);
-        Array.Copy(ps.Item1, zones, 30);
-        cmd = ps.Item3.Replace(".","");
-        nz = ps.Item2;
-        int check = nz == 0 ? 29 : nz -1;
-        int direction = 1;
-        if( phrase.Length > 1 )
-        {
-            direction = zones[check] == phrase[phrase.Length-2] ? 1 : -1;
-            
-            nz += direction;
-            if( nz < 0 ) nz = 30 - nz;
-            if( nz > 29 ) nz = nz - 30;
-        }
-
         // write counter
-        cmd += direction > 0 ? '>' : '<';
-        nz += direction;
-
-        //Console.Error.WriteLine("Write: Writing counter value {0} at Memory Pos: {1}", (char)(64 + repeat), nz);
-        cmd += SetRune( (char)(64 + repeat), nz );
+        cmd += '>' + SetRune((char)(64 + repeat), nz );
 
         // write the loop
         cmd += string.Format("[{0}{1}-]", 
-                    "".PadRight(phrase.Length,direction > 0 ? '<' : '>'), 
-                    string.Join("",Enumerable.Range(0, phrase.Length).Select(i => direction > 0 ?".>" : ".<"))
-                    );
+                    "".PadRight(phrase.Length,'<'), 
+                    string.Join("",Enumerable.Range(0, phrase.Length).Select(i => ".>")));
 
-        
+        zones[nz] = ' ';    
         solution = new Tuple<char[],int,string>(new char[30], nz, cmd);
         Array.Copy(zones, solution.Item1,30);  
-        
-        solutions.Add(solution);  
-        //Console.Error.WriteLine("Write: Solution Memory: " + string.Concat(solution.Item1.Select(c => c == ' ' ? '-' : c)));
             
+        solutions.Add(solution);  
         Array.Copy(memory, zones, 30);
+
         
-        
+        solution = WritePhrase(phrase.Reverse().ToArray(), z);
+        Array.Copy(solution.Item1, zones, 30);
+        nz = AdjustPosition(solution.Item2 - 1);
+        cmd = solution.Item3;
+        // write counter
+        cmd += '<' + SetRune((char)(64 + repeat), nz );
+
+        // write the loop
+        cmd += string.Format("[{0}{1}-]", 
+                    "".PadRight(phrase.Length,'>'), 
+                    string.Join("",Enumerable.Range(0, phrase.Length).Select(i => ".<")));
+   
+        zones[nz] = ' ';    
+        solution = new Tuple<char[],int,string>(new char[30], nz, cmd);
+        Array.Copy(zones, solution.Item1,30);  
+            
+        solutions.Add(solution);  
+        Array.Copy(memory, zones, 30);
+
         solution = solutions.OrderBy(s => s.Item3.Length).First();
         
         Array.Copy(solution.Item1, zones, 30);
-
         return new Tuple<int, string>(solution.Item2, solution.Item3);
     }
     static Tuple<int, string> MoveToRune(char rune, int z)
@@ -501,11 +567,9 @@ public class bilbo
         return new Tuple<int, string>(z, cmd.Length < 3 ? cmd : "[>]");
 
     }
-
     static string SetRune(char rune, int z)
     {
         var solutions = new List<string>();
-
         var cR = zones[z];
 
         solutions.Add(ClearRune(z) + SetRune(rune, z, false));
@@ -518,7 +582,6 @@ public class bilbo
         zones[z] = cR;
 
         solutions.Add(SetRune(rune, z, true));
-        zones[z] = cR;
 
         return solutions.OrderBy(s => s.Length).First();
     }
@@ -531,18 +594,12 @@ public class bilbo
         {
             if (backward)
             {
-                if (zones[z] == 'A') zones[z] = ' ';
-                else if (zones[z] == ' ') zones[z] = 'Z';
-                else zones[z] = (char)((int)zones[z] - 1);
-
+                DecrementMemory (zones, z);
                 instruction += '-';
             }
             else
             {
-                if (zones[z] == 'Z') zones[z] = ' ';
-                else if (zones[z] == ' ') zones[z] = 'A';
-                else zones[z] = (char)((int)zones[z] + 1);
-
+                IncrementMemory(zones, z);
                 instruction += '+';
             }
         }
@@ -553,8 +610,31 @@ public class bilbo
     {
         if (zones[z] == ' ') return string.Empty;
         if (zones[z] == 'A') return "-";
+        if (zones[z] == 'B') return "--";
+
         if (zones[z] == 'Z') return "+";
+        if (zones[z] == 'Y') return "++";
 
         return "[+]";
+    }
+    static int AdjustPosition(int z)
+    {
+        if( z < 0 ) return 30 + z;
+        else if( z > 29 ) return z - 30;
+
+        return z;
+    }
+    static void IncrementMemory(char[] memory, int addr)
+    {
+        if (memory[addr] == 'Z') memory[addr] = ' ';
+        else if (memory[addr] == ' ') memory[addr] = 'A';
+        else memory[addr] = (char)((int)memory[addr] + 1);
+        
+    }
+    static void DecrementMemory(char[] memory, int addr)
+    {
+        if (memory[addr] == 'A') memory[addr] = ' ';
+        else if (memory[addr] == ' ') memory[addr] = 'Z';
+        else memory[addr] = (char)((int)memory[addr] - 1);
     }
 }
