@@ -14,14 +14,285 @@ using System.Text.RegularExpressions;
  **/
 public class bilbo
 {
-    static TextReader _input;
-    static  TextWriter _output;
-    static TextWriter Error;
+    struct AppState
+    {
+        public char[] Memory {get;set;}
+        public int Pointer {get;set;}
+
+        public char Current => Memory[Pointer];
+
+        public void IncrementPointer() => Pointer = AdjustPosition(Pointer + 1);
+        public void DecrementPointer() => Pointer = AdjustPosition(Pointer - 1);
+    }
+    interface Instruction
+    {
+        string Setup { get; }
+        string Write { get; }
+        AppState State {get;}
+    }
+
+    struct Sequence : Instruction
+    {
+        static Sequence _empty;
+        public static Sequence Empty => _empty;
+        public string _sequence { get; set; }
+        public string Setup { get; set; }
+        public string Write { get; set; }
+        public AppState State {get; set;}
+
+        public static string Identify(string phrase)
+        {
+            int i = 0;
+            int direction = 0;
+            string sequence = "";
+            while( i+1 < phrase.Length)
+            {
+                char c = phrase[i];
+                if( direction == 0)
+                {
+                    if( phrase[i+1] == c+1) direction = 1;
+                    else if( phrase[i+1] == c-1) direction = -1;
+                    else break;
+
+                    sequence += phrase[i];                
+                }
+                
+                if( phrase[i+1] == c+direction)
+                {
+                    sequence += phrase[++i];              
+                    continue;              
+                }
+                break;
+            }
+            return sequence;
+        }
+        public static Sequence Encode(string sequence, AppState state)
+        {
+            if( string.IsNullOrEmpty(sequence) ) return Empty;
+            if( sequence.Length == 1) throw new InvalidDataException("Invalid Sequence Length (1)");
+
+            
+            int direction = sequence[2] - sequence[1];   
+
+            if( sequence.Length == 26) // full alphabet
+            {     
+                var retval = new Sequence
+                {
+                    State = state,
+                    _sequence = sequence, 
+                    Write = direction < 0 ? "[.-]" : "[.+]" 
+                };       
+                if( state.Current == (direction < 0 ? 'Z' : 'A'))
+                {
+                    return retval;
+                }
+                else
+                {   
+                    if( retval.State.Memory.Contains(' '))
+                    {
+                        var m = MoveToEmpty(retval.State);
+                        retval.Setup = m.Item1;
+                        retval.State = m.Item2;
+                    }
+                    string instruction = ClearCurrentMemoryLocation(state);
+                    if (instruction.Length < retval.Setup.Length)
+                    {
+                        state.Memory[ state.Pointer ] = ' ';
+                        retval.Setup = instruction;
+                        retval.State = state;
+                    }
+                    return retval;
+                }
+            }
+            else 
+            {
+                var solution = new Sequence();
+                var solutions = new List<Sequence>();
+                char value = sequence[0];
+
+                if (state.Memory.Contains(value))
+                {
+                    var mtv = MoveToValue(value, state);
+                    solution.Setup = mtv.Item1;
+                    solution.State = mtv.Item2;
+
+                    if( sequence.Length < 4)
+                    {
+                        solution.Write = "".PadRight(sequence.Length,'|')
+                                           .Replace("|", direction < 0 ? ".-" : ".+");
+                    }
+                    else
+                    {
+                        // write counter
+                        solution.Setup += ">";
+                        solution.State.IncrementPointer();
+                        
+                        cmd += SetRune((char)(64 + sequence.Length), nz );
+
+                        // write the loop
+                        cmd += direction < 0 ? "[<.->-]" : "[<.+>-]";
+                        zones[nz] = ' ';
+                        solution = new Tuple<char[],int,string>(new char[30], nz, cmd);
+                        Array.Copy(zones, solution.Item1,30);  
+                        
+                        solutions.Add(solution);  
+                        Array.Copy(memory, zones, 30);
+                    }
+                   
+                }
+
+                #region Sequence with Loop
+                cmd = SetRune(rune, z);
+                zones[z] = sequence.Last();
+                nz = AdjustPosition(z+1);
+
+                // write counter
+                cmd += ">";
+                cmd += SetRune((char)(64 + sequence.Length), nz );
+
+                // write the loop
+                cmd += direction < 0 ? "[<.->-]" : "[<.+>-]";
+                zones[nz] = ' ';
+                solution = new Tuple<char[],int,string>(new char[30], nz, cmd);
+                Array.Copy(zones, solution.Item1,30);  
+                
+                solutions.Add(solution);  
+                Array.Copy(memory, zones, 30);
+                #endregion
+
+                // Sequence without loop
+                solution = WritePhrase(sequence.ToArray(), z);
+                solutions.Add(solution);  
+                Array.Copy(memory, zones, 30);
+
+                solution = solutions.OrderBy(s => s.Item3.Length).First();
+                
+                Array.Copy(solution.Item1, zones, 30);
+                return new Tuple<int, string>(solution.Item2, solution.Item3);
+            }
+                 
+        }
+    }
+
+    static Tuple<string,AppState> MoveToEmpty(AppState state, bool reverse = false)
+    {
+        if( !state.Memory.Contains(' ')) throw new InvalidDataException("No Empty Memory");
+        
+        string instruction = string.Empty;
+        if (reverse)
+        {
+            while (state.Current != ' ')
+            {
+                instruction += "<";
+                if (--state.Pointer < 0) state.Pointer = 29;
+            }
+            return new Tuple<string,AppState>(instruction.Length < 3 ? instruction : "[<]", state);
+        }
+
+        while (state.Current != ' ')
+        {
+            instruction += ">";
+            if (++state.Pointer > 29) state.Pointer = 0;
+        }
+        return new Tuple<string,AppState>(instruction.Length < 3 ? instruction : "[>]", state);
+    }
+    static string ClearCurrentMemoryLocation(AppState state)
+    {
+        if (state.Current == ' ') return string.Empty;
+        if (state.Current == 'A') return "-";
+        if (state.Current == 'B') return "--";
+
+        if (state.Current == 'Z') return "+";
+        if (state.Current == 'Y') return "++";
+
+        return "[+]";
+    }
+    static Tuple<string,AppState> MoveToAddress(int address, AppState state)
+    {
+        var solutions = new List<string>();
+        var e = MoveToEmpty(state);
+        
+        Func<int,int,int> forward = (int x, int y) => x < y ? 30 + y - x : x - y;
+        Func<int,int,int> backward = (int x, int y) => x > y ? 30 + y - x : y - x;
+
+        solutions.Add("".PadRight(forward(address,state.Pointer), '>'));
+        solutions.Add(e.Item1 + "".PadRight(forward(address,e.Item2.Pointer), '>'));
+
+        solutions.Add("".PadRight(backward(address,state.Pointer), '<'));
+        solutions.Add(e.Item1 + "".PadRight(backward(address,e.Item2.Pointer), '<'));
+        
+        state.Pointer = address;
+        return new Tuple<string, AppState>(solutions.OrderBy(s => s.Length).First(), state);
+    }
+    static Tuple<string,AppState> MoveToValue(char value, AppState state)
+    {
+        var address = state.Memory
+                          .Where(c => c == value)
+                          .Select((v,i) => new { Index = i, Value = v })
+                          .OrderBy(v => DistanceTo(v.Index, state))
+                          .Select(v => v.Index)
+                          .First();
+        
+        return MoveToAddress(address, state);
+    }
+    static Tuple<string,AppState> SetValue(char value, AppState state)
+    {
+        var solutions = new List<string>();
+        var cR = zones[z];
+
+        solutions.Add(ClearRune(z) + SetRune(rune, z, false));
+        zones[z] = cR;
+
+        solutions.Add(ClearRune(z) + SetRune(rune, z, true));
+        zones[z] = cR;
+
+        solutions.Add(SetRune(rune, z, false));
+        zones[z] = cR;
+
+        solutions.Add(SetRune(rune, z, true));
+
+        return solutions.OrderBy(s => s.Length).First();
+    }
+    static string SetRune(char rune, int z, bool backward)
+    {
+        string instruction = string.Empty;
+        if (zones[z] == rune) return instruction;
+
+        while (zones[z] != rune)
+        {
+            if (backward)
+            {
+                DecrementMemory (zones, z);
+                instruction += '-';
+            }
+            else
+            {
+                IncrementMemory(zones, z);
+                instruction += '+';
+            }
+        }
+
+        return instruction;
+    }
     
+    static int DistanceTo(int addr, AppState state)
+    {
+        if( state.Pointer == addr ) return 0;
+        
+        int dist = 0;
+        int pointer = state.Pointer;
+        while(++pointer != addr) dist++;
+
+        int dist2 = 0;        
+        pointer = state.Pointer;
+        while(--pointer != addr) dist2++;
+
+        return dist < dist2 ? dist : dist2;
+    }
     static Regex hasDuplicates = new Regex("(.+?)\\1+", RegexOptions.Compiled);
     static char[] zones = string.Empty.PadRight(30, ' ').ToArray();
     public static void Main(string[] args) => Process(Console.In, Console.Out, Console.Error);
-    public static string ExecuteCmd(string cmd) 
+    public static string Execute(string cmd) 
     {
         string spell = string.Empty;
             
@@ -637,4 +908,5 @@ public class bilbo
         else if (memory[addr] == ' ') memory[addr] = 'Z';
         else memory[addr] = (char)((int)memory[addr] - 1);
     }
+    
 }

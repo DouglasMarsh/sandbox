@@ -16,8 +16,8 @@ namespace csharp
                 {
                     //bilbo.Process(reader, writer, Console.Error);
                     //var cmd = writer.ToString().Trim();
-                    var cmd = "------------>-------[<-.+.>-]";
-                    var actual = bilbo.ExecuteCmd(cmd);
+                    //var cmd = "------------>-------[<-.+.>-]";
+                    var actual = bilbo.Execute("<-[>+]");
                 
                     if( !actual.Equals(expected))
                     {
